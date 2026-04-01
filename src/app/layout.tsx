@@ -19,7 +19,7 @@ const bebasNeue = Bebas_Neue({
 });
 
 export const metadata: Metadata = {
-  title: "Carne Asada | Pedido rápido por WhatsApp",
+  title: "Asada Chihuas | Pedido rápido por WhatsApp",
   description:
     "Menú digital mobile-first para pedir carne asada, paquetes y extras por WhatsApp en segundos.",
 };

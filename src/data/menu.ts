@@ -1,8 +1,8 @@
 import type { BusinessConfig, MenuProduct } from "@/types/menu";
 
 export const businessConfig: BusinessConfig = {
-  name: "Asada Chihua",
-  whatsappPhone: "5216142130245",
+  name: "Asada Chihuas",
+  whatsappPhone: "5216141234567",
   address: "Calle Falsa 123, Colonia Centro, Chihuahua, México",
   hours: "Viernes, Sábado y Domingo de 12:00 p.m. a 9:00 p.m.",
   deliveryNote: "Pide rápido por WhatsApp y confirma disponibilidad al momento.",
