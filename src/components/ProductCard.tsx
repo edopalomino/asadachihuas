@@ -6,7 +6,6 @@ type ProductCardProps = {
   quantity: number;
   onDecrease: () => void;
   onIncrease: () => void;
-  onAdd: () => void;
 };
 
 export function ProductCard({
@@ -14,7 +13,6 @@ export function ProductCard({
   quantity,
   onDecrease,
   onIncrease,
-  onAdd,
 }: ProductCardProps) {
   return (
     <article className="group relative overflow-hidden rounded-[28px] border border-white/70 bg-white p-5 shadow-[0_20px_55px_rgba(109,27,17,0.09)] transition-transform duration-200 hover:-translate-y-0.5">
@@ -61,7 +59,7 @@ export function ProductCard({
         </ul>
       </div>
 
-      <div className="mt-5 flex items-center gap-3">
+      <div className="mt-5 flex items-center">
         <div className="flex h-13 items-center rounded-full border border-stone-200 bg-stone-50 px-2 shadow-inner">
           <button
             type="button"
@@ -83,14 +81,6 @@ export function ProductCard({
             +
           </button>
         </div>
-
-        <button
-          type="button"
-          onClick={onAdd}
-          className="flex h-13 flex-1 items-center justify-center rounded-full bg-[#c62828] px-5 text-base font-black text-white shadow-[0_16px_32px_rgba(198,40,40,0.28)] transition hover:bg-[#b71c1c]"
-        >
-          Pedir
-        </button>
       </div>
     </article>
   );

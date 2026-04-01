@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { CartSummary } from "@/components/CartSummary";
 import { ExtraItemRow } from "@/components/ExtraItemRow";
@@ -22,7 +22,7 @@ type QuantityState = Record<string, number>;
 const STORAGE_KEY = "steakshop-cart-v1";
 
 function clampQuantity(value: number) {
-  return Math.max(1, Math.min(99, value));
+  return Math.max(0, Math.min(99, value));
 }
 
 export function MenuExperience({
@@ -33,9 +33,10 @@ export function MenuExperience({
   serviceHighlights,
 }: MenuExperienceProps) {
   const [cart, setCart] = useState<QuantityState>({});
-  const [draftQuantities, setDraftQuantities] = useState<QuantityState>({});
   const [isHydrated, setIsHydrated] = useState(false);
   const [lastAddedId, setLastAddedId] = useState<string | null>(null);
+  const [orderBarPulseToken, setOrderBarPulseToken] = useState(0);
+  const hasObservedHydratedCart = useRef(false);
 
   useEffect(() => {
     try {
@@ -70,6 +71,19 @@ export function MenuExperience({
 
     return () => window.clearTimeout(timeout);
   }, [lastAddedId]);
+
+  useEffect(() => {
+    if (!isHydrated) {
+      return;
+    }
+
+    if (!hasObservedHydratedCart.current) {
+      hasObservedHydratedCart.current = true;
+      return;
+    }
+
+    setOrderBarPulseToken((current) => current + 1);
+  }, [cart, isHydrated]);
 
   const productMap = useMemo(
     () => new Map(menuProducts.map((product) => [product.id, product])),
@@ -106,41 +120,14 @@ export function MenuExperience({
 
   const { url: whatsappUrl } = buildWhatsAppOrder(businessConfig, cartItems);
 
-  function getDraftQuantity(productId: string) {
-    return draftQuantities[productId] ?? 1;
-  }
-
-  function updateDraft(productId: string, nextValue: number) {
-    setDraftQuantities((current) => ({
-      ...current,
-      [productId]: clampQuantity(nextValue),
-    }));
-  }
-
-  function addToCart(productId: string) {
-    const quantityToAdd = getDraftQuantity(productId);
-
-    setCart((current) => ({
-      ...current,
-      [productId]: (current[productId] ?? 0) + quantityToAdd,
-    }));
-    setDraftQuantities((current) => ({
-      ...current,
-      [productId]: 1,
-    }));
-    setLastAddedId(productId);
-  }
-
-  function increaseCartItem(productId: string) {
-    setCart((current) => ({
-      ...current,
-      [productId]: (current[productId] ?? 0) + 1,
-    }));
-  }
-
-  function decreaseCartItem(productId: string) {
+  function changeCartItem(productId: string, delta: number) {
     setCart((current) => {
-      const nextQuantity = (current[productId] ?? 0) - 1;
+      const currentQuantity = current[productId] ?? 0;
+      const nextQuantity = clampQuantity(currentQuantity + delta);
+
+      if (nextQuantity === currentQuantity) {
+        return current;
+      }
 
       if (nextQuantity <= 0) {
         const { [productId]: _removed, ...rest } = current;
@@ -152,6 +139,23 @@ export function MenuExperience({
         [productId]: nextQuantity,
       };
     });
+  }
+
+  function increaseProductQuantity(productId: string) {
+    changeCartItem(productId, 1);
+    setLastAddedId(productId);
+  }
+
+  function decreaseProductQuantity(productId: string) {
+    changeCartItem(productId, -1);
+  }
+
+  function increaseCartItem(productId: string) {
+    changeCartItem(productId, 1);
+  }
+
+  function decreaseCartItem(productId: string) {
+    changeCartItem(productId, -1);
   }
 
   function removeCartItem(productId: string) {
@@ -249,10 +253,9 @@ export function MenuExperience({
             >
               <ProductCard
                 product={product}
-                quantity={getDraftQuantity(product.id)}
-                onDecrease={() => updateDraft(product.id, getDraftQuantity(product.id) - 1)}
-                onIncrease={() => updateDraft(product.id, getDraftQuantity(product.id) + 1)}
-                onAdd={() => addToCart(product.id)}
+                quantity={cart[product.id] ?? 0}
+                onDecrease={() => decreaseProductQuantity(product.id)}
+                onIncrease={() => increaseProductQuantity(product.id)}
               />
             </div>
           ))}
@@ -276,10 +279,9 @@ export function MenuExperience({
             <ExtraItemRow
               key={product.id}
               product={product}
-              quantity={getDraftQuantity(product.id)}
-              onDecrease={() => updateDraft(product.id, getDraftQuantity(product.id) - 1)}
-              onIncrease={() => updateDraft(product.id, getDraftQuantity(product.id) + 1)}
-              onAdd={() => addToCart(product.id)}
+              quantity={cart[product.id] ?? 0}
+              onDecrease={() => decreaseProductQuantity(product.id)}
+              onIncrease={() => increaseProductQuantity(product.id)}
             />
           ))}
         </div>
@@ -344,6 +346,7 @@ export function MenuExperience({
         itemCount={itemCount}
         whatsappUrl={whatsappUrl}
         disabled={cartItems.length === 0}
+        pulseToken={orderBarPulseToken}
       />
     </>
   );

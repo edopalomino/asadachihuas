@@ -18,6 +18,11 @@ export type BusinessConfig = {
   deliveryNote: string;
 };
 
+export type MenuContent = {
+  businessConfig: BusinessConfig;
+  serviceHighlights: string[];
+};
+
 export type CartLineItem = {
   id: string;
   name: string;

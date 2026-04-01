@@ -73,3 +73,27 @@ h3 {
     transform: translateY(0);
   }
 }
+
+@keyframes order-total-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  45% {
+    transform: scale(1.12);
+    opacity: 0.96;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.order-total-pulse {
+  display: inline-block;
+  animation: order-total-pulse 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: left center;
+  will-change: transform, opacity;
+}

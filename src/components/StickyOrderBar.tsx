@@ -1,3 +1,5 @@
+"use client";
+
 import { formatCurrency } from "@/lib/whatsapp";
 
 type StickyOrderBarProps = {
@@ -5,6 +7,7 @@ type StickyOrderBarProps = {
   itemCount: number;
   whatsappUrl: string;
   disabled: boolean;
+  pulseToken: number;
 };
 
 export function StickyOrderBar({
@@ -12,10 +15,11 @@ export function StickyOrderBar({
   itemCount,
   whatsappUrl,
   disabled,
+  pulseToken,
 }: StickyOrderBarProps) {
   const content = (
     <>
-      <div>
+      <div key={pulseToken} className={pulseToken > 0 ? "order-total-pulse" : undefined}>
         <p className="text-[11px] font-black uppercase tracking-[0.18em] text-emerald-100/80">
           Total acumulado
         </p>

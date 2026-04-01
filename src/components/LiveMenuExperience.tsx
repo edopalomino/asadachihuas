@@ -1,9 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, doc, onSnapshot } from "firebase/firestore";
 
 import { MenuExperience } from "@/components/MenuExperience";
+import {
+  MENU_CONTENT_COLLECTION,
+  MENU_CONTENT_DOC,
+  sanitizeMenuContentDocument,
+} from "@/lib/menu-content";
 import {
   applyMenuPriceOverrides,
   MENU_PRICE_COLLECTION,
@@ -27,6 +32,11 @@ export default function LiveMenuExperience({
 }: LiveMenuExperienceProps) {
   const [priceOverrides, setPriceOverrides] = useState<MenuPriceMap>({});
   const [priceSyncError, setPriceSyncError] = useState<string | null>(null);
+  const [liveBusinessConfig, setLiveBusinessConfig] =
+    useState<BusinessConfig>(businessConfig);
+  const [liveServiceHighlights, setLiveServiceHighlights] =
+    useState<string[]>(serviceHighlights);
+  const [contentSyncError, setContentSyncError] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
@@ -55,6 +65,37 @@ export default function LiveMenuExperience({
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      doc(db, MENU_CONTENT_COLLECTION, MENU_CONTENT_DOC),
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          setLiveBusinessConfig(businessConfig);
+          setLiveServiceHighlights(serviceHighlights);
+          setContentSyncError(null);
+          return;
+        }
+
+        const nextContent = sanitizeMenuContentDocument(
+          snapshot.data(),
+          businessConfig,
+          serviceHighlights,
+        );
+
+        setLiveBusinessConfig(nextContent.businessConfig);
+        setLiveServiceHighlights(nextContent.serviceHighlights);
+        setContentSyncError(null);
+      },
+      () => {
+        setLiveBusinessConfig(businessConfig);
+        setLiveServiceHighlights(serviceHighlights);
+        setContentSyncError("No se pudieron sincronizar los datos del negocio.");
+      },
+    );
+
+    return () => unsubscribe();
+  }, [businessConfig, serviceHighlights]);
+
   const liveFeaturedProducts = useMemo(
     () => applyMenuPriceOverrides(featuredProducts, priceOverrides),
     [featuredProducts, priceOverrides],
@@ -70,11 +111,15 @@ export default function LiveMenuExperience({
     [liveExtraProducts, liveFeaturedProducts],
   );
 
+  const syncMessages = [priceSyncError, contentSyncError].filter(
+    (message): message is string => Boolean(message),
+  );
+
   return (
     <>
-      {priceSyncError ? (
+      {syncMessages.length > 0 ? (
         <div className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
-          {priceSyncError} Se muestran los precios base del menú.
+          {syncMessages.join(" ")} Se muestran los datos base del menú.
         </div>
       ) : null}
 
@@ -82,8 +127,8 @@ export default function LiveMenuExperience({
         featuredProducts={liveFeaturedProducts}
         extraProducts={liveExtraProducts}
         menuProducts={liveMenuProducts}
-        businessConfig={businessConfig}
-        serviceHighlights={serviceHighlights}
+        businessConfig={liveBusinessConfig}
+        serviceHighlights={liveServiceHighlights}
       />
     </>
   );

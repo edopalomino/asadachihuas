@@ -6,7 +6,6 @@ type ExtraItemRowProps = {
   quantity: number;
   onDecrease: () => void;
   onIncrease: () => void;
-  onAdd: () => void;
 };
 
 export function ExtraItemRow({
@@ -14,7 +13,6 @@ export function ExtraItemRow({
   quantity,
   onDecrease,
   onIncrease,
-  onAdd,
 }: ExtraItemRowProps) {
   return (
     <article className="rounded-[24px] border border-stone-200 bg-white px-4 py-4 shadow-[0_16px_35px_rgba(15,23,42,0.06)]">
@@ -49,13 +47,6 @@ export function ExtraItemRow({
           className="flex h-10 w-10 items-center justify-center rounded-full border border-stone-950 bg-stone-950 text-xl font-black text-white"
         >
           +
-        </button>
-        <button
-          type="button"
-          onClick={onAdd}
-          className="ml-1 rounded-full bg-[#c62828] px-4 py-3 text-sm font-black text-white"
-        >
-          Pedir
         </button>
       </div>
     </article>
