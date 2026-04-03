@@ -18,11 +18,110 @@ type MenuExperienceProps = {
 };
 
 type QuantityState = Record<string, number>;
+type SelectionState = Record<string, string>;
 
 const STORAGE_KEY = "steakshop-cart-v1";
+const CART_KEY_SEPARATOR = "::";
 
 function clampQuantity(value: number) {
   return Math.max(0, Math.min(99, value));
+}
+
+function buildCartKey(productId: string, optionId?: string) {
+  if (!optionId) {
+    return productId;
+  }
+
+  return `${productId}${CART_KEY_SEPARATOR}${optionId}`;
+}
+
+function parseCartKey(cartKey: string) {
+  const [productId, optionId] = cartKey.split(CART_KEY_SEPARATOR);
+
+  return {
+    productId,
+    optionId,
+  };
+}
+
+function getDefaultOptionId(product: MenuProduct) {
+  return product.options?.[0]?.id;
+}
+
+function buildDefaultSelections(products: MenuProduct[]) {
+  return Object.fromEntries(
+    products
+      .filter((product) => Boolean(getDefaultOptionId(product)))
+      .map((product) => [product.id, getDefaultOptionId(product)!]),
+  ) as SelectionState;
+}
+
+function sanitizeStoredCart(value: unknown, products: MenuProduct[]) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  const productMap = new Map(products.map((product) => [product.id, product]));
+  const nextCart: QuantityState = {};
+
+  for (const [cartKey, rawQuantity] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
+    if (typeof rawQuantity !== "number" || !Number.isFinite(rawQuantity)) {
+      continue;
+    }
+
+    const quantity = clampQuantity(Math.round(rawQuantity));
+
+    if (quantity < 1) {
+      continue;
+    }
+
+    const { productId, optionId } = parseCartKey(cartKey);
+    const product = productMap.get(productId);
+
+    if (!product) {
+      continue;
+    }
+
+    let normalizedCartKey = cartKey;
+
+    if (product.options?.length) {
+      const normalizedOptionId = product.options.some(
+        (option) => option.id === optionId,
+      )
+        ? optionId
+        : getDefaultOptionId(product);
+
+      if (!normalizedOptionId) {
+        continue;
+      }
+
+      normalizedCartKey = buildCartKey(product.id, normalizedOptionId);
+    }
+
+    nextCart[normalizedCartKey] = clampQuantity(
+      (nextCart[normalizedCartKey] ?? 0) + quantity,
+    );
+  }
+
+  return nextCart;
+}
+
+function deriveSelectionsFromCart(cart: QuantityState, products: MenuProduct[]) {
+  const nextSelections = buildDefaultSelections(products);
+
+  for (const cartKey of Object.keys(cart)) {
+    const { productId, optionId } = parseCartKey(cartKey);
+
+    if (!optionId) {
+      continue;
+    }
+
+    nextSelections[productId] = optionId;
+  }
+
+  return nextSelections;
 }
 
 export function MenuExperience({
@@ -33,6 +132,9 @@ export function MenuExperience({
   serviceHighlights,
 }: MenuExperienceProps) {
   const [cart, setCart] = useState<QuantityState>({});
+  const [selectedOptions, setSelectedOptions] = useState<SelectionState>(() =>
+    buildDefaultSelections(menuProducts),
+  );
   const [isHydrated, setIsHydrated] = useState(false);
   const [lastAddedId, setLastAddedId] = useState<string | null>(null);
   const [orderBarPulseToken, setOrderBarPulseToken] = useState(0);
@@ -43,14 +145,20 @@ export function MenuExperience({
       const storedCart = window.localStorage.getItem(STORAGE_KEY);
 
       if (storedCart) {
-        setCart(JSON.parse(storedCart) as QuantityState);
+        const nextCart = sanitizeStoredCart(JSON.parse(storedCart), menuProducts);
+
+        setCart(nextCart);
+        setSelectedOptions(deriveSelectionsFromCart(nextCart, menuProducts));
+      } else {
+        setSelectedOptions(buildDefaultSelections(menuProducts));
       }
     } catch {
       window.localStorage.removeItem(STORAGE_KEY);
+      setSelectedOptions(buildDefaultSelections(menuProducts));
     } finally {
       setIsHydrated(true);
     }
-  }, []);
+  }, [menuProducts]);
 
   useEffect(() => {
     if (!isHydrated) {
@@ -92,16 +200,27 @@ export function MenuExperience({
 
   const cartItems = useMemo<CartLineItem[]>(() => {
     return Object.entries(cart)
-      .map(([productId, quantity]) => {
+      .map<CartLineItem | null>(([cartKey, quantity]) => {
+        const { productId, optionId } = parseCartKey(cartKey);
         const product = productMap.get(productId);
 
         if (!product || quantity < 1) {
           return null;
         }
 
+        const option = product.options?.find(
+          (productOption) => productOption.id === optionId,
+        );
+
+        if (product.options?.length && !option) {
+          return null;
+        }
+
         return {
-          id: product.id,
+          id: cartKey,
+          productId: product.id,
           name: product.name,
+          ...(option ? { optionLabel: option.label } : {}),
           quantity,
           unitPrice: product.price,
           totalPrice: product.price * quantity,
@@ -110,8 +229,8 @@ export function MenuExperience({
       .filter((item): item is CartLineItem => item !== null)
       .sort(
         (left, right) =>
-          menuProducts.findIndex((product) => product.id === left.id) -
-          menuProducts.findIndex((product) => product.id === right.id),
+          menuProducts.findIndex((product) => product.id === left.productId) -
+          menuProducts.findIndex((product) => product.id === right.productId),
       );
   }, [cart, menuProducts, productMap]);
 
@@ -120,9 +239,24 @@ export function MenuExperience({
 
   const { url: whatsappUrl } = buildWhatsAppOrder(businessConfig, cartItems);
 
-  function changeCartItem(productId: string, delta: number) {
+  function getSelectedCartKey(product: MenuProduct) {
+    return buildCartKey(product.id, selectedOptions[product.id] ?? getDefaultOptionId(product));
+  }
+
+  function getProductQuantity(product: MenuProduct) {
+    if (!product.options?.length) {
+      return cart[product.id] ?? 0;
+    }
+
+    return product.options.reduce(
+      (sum, option) => sum + (cart[buildCartKey(product.id, option.id)] ?? 0),
+      0,
+    );
+  }
+
+  function changeCartItem(cartKey: string, delta: number) {
     setCart((current) => {
-      const currentQuantity = current[productId] ?? 0;
+      const currentQuantity = current[cartKey] ?? 0;
       const nextQuantity = clampQuantity(currentQuantity + delta);
 
       if (nextQuantity === currentQuantity) {
@@ -130,37 +264,49 @@ export function MenuExperience({
       }
 
       if (nextQuantity <= 0) {
-        const { [productId]: _removed, ...rest } = current;
+        const { [cartKey]: _removed, ...rest } = current;
         return rest;
       }
 
       return {
         ...current,
-        [productId]: nextQuantity,
+        [cartKey]: nextQuantity,
       };
     });
   }
 
   function increaseProductQuantity(productId: string) {
-    changeCartItem(productId, 1);
+    const product = productMap.get(productId);
+
+    if (!product) {
+      return;
+    }
+
+    changeCartItem(getSelectedCartKey(product), 1);
     setLastAddedId(productId);
   }
 
   function decreaseProductQuantity(productId: string) {
-    changeCartItem(productId, -1);
+    const product = productMap.get(productId);
+
+    if (!product) {
+      return;
+    }
+
+    changeCartItem(getSelectedCartKey(product), -1);
   }
 
-  function increaseCartItem(productId: string) {
-    changeCartItem(productId, 1);
+  function increaseCartItem(cartKey: string) {
+    changeCartItem(cartKey, 1);
   }
 
-  function decreaseCartItem(productId: string) {
-    changeCartItem(productId, -1);
+  function decreaseCartItem(cartKey: string) {
+    changeCartItem(cartKey, -1);
   }
 
-  function removeCartItem(productId: string) {
+  function removeCartItem(cartKey: string) {
     setCart((current) => {
-      const { [productId]: _removed, ...rest } = current;
+      const { [cartKey]: _removed, ...rest } = current;
       return rest;
     });
   }
@@ -253,9 +399,17 @@ export function MenuExperience({
             >
               <ProductCard
                 product={product}
-                quantity={cart[product.id] ?? 0}
+                quantity={cart[getSelectedCartKey(product)] ?? 0}
+                totalQuantity={getProductQuantity(product)}
+                selectedOptionId={selectedOptions[product.id]}
                 onDecrease={() => decreaseProductQuantity(product.id)}
                 onIncrease={() => increaseProductQuantity(product.id)}
+                onSelectOption={(optionId) => {
+                  setSelectedOptions((current) => ({
+                    ...current,
+                    [product.id]: optionId,
+                  }));
+                }}
               />
             </div>
           ))}

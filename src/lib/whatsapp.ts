@@ -10,6 +10,14 @@ export function formatCurrency(value: number) {
   return currencyFormatter.format(value);
 }
 
+function formatItemLabel(item: CartLineItem) {
+  if (!item.optionLabel) {
+    return item.name;
+  }
+
+  return `${item.name} - ${item.optionLabel}`;
+}
+
 export function buildWhatsAppOrder(
   config: BusinessConfig,
   items: CartLineItem[],
@@ -20,22 +28,9 @@ export function buildWhatsAppOrder(
     "Hola, quiero pedir:",
     "",
     ...items.map(
-      (item) =>
-        `${item.quantity} x ${item.name}`,
+      (item) => `${item.quantity} x ${formatItemLabel(item)}`,
     ),
     "",
-    "¿Está disponible?",
-  ].join("\n");
-
-  const messageTest = [
-    "Hola, quiero pedir:",
-    "",
-    ...items.map(
-      (item) =>
-        `${item.quantity} x ${item.name} - ${formatCurrency(item.totalPrice)} (${formatCurrency(item.unitPrice)} c/u)`,
-    ),
-    "",
-    `Total aproximado: ${formatCurrency(total)}`,
     "¿Está disponible?",
   ].join("\n");
 

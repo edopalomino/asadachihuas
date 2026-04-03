@@ -1,11 +1,17 @@
 export type ProductCategory = "featured" | "extra";
 
+export type MenuProductOption = {
+  id: string;
+  label: string;
+};
+
 export type MenuProduct = {
   id: string;
   name: string;
   description: string[];
   price: number;
   category: ProductCategory;
+  options?: MenuProductOption[];
   badge?: string;
   imageLabel?: string;
 };
@@ -25,7 +31,9 @@ export type MenuContent = {
 
 export type CartLineItem = {
   id: string;
+  productId: string;
   name: string;
+  optionLabel?: string;
   quantity: number;
   unitPrice: number;
   totalPrice: number;

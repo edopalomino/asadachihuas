@@ -4,15 +4,21 @@ import type { MenuProduct } from "@/types/menu";
 type ProductCardProps = {
   product: MenuProduct;
   quantity: number;
+  totalQuantity: number;
+  selectedOptionId?: string;
   onDecrease: () => void;
   onIncrease: () => void;
+  onSelectOption?: (optionId: string) => void;
 };
 
 export function ProductCard({
   product,
   quantity,
+  totalQuantity,
+  selectedOptionId,
   onDecrease,
   onIncrease,
+  onSelectOption,
 }: ProductCardProps) {
   return (
     <article className="group relative overflow-hidden rounded-[28px] border border-white/70 bg-white p-5 shadow-[0_20px_55px_rgba(109,27,17,0.09)] transition-transform duration-200 hover:-translate-y-0.5">
@@ -58,6 +64,43 @@ export function ProductCard({
           ))}
         </ul>
       </div>
+
+      {product.options?.length ? (
+        <fieldset className="mt-5 rounded-[24px] border border-orange-100 bg-orange-50/80 p-4">
+          <legend className="text-[11px] font-black uppercase tracking-[0.18em] text-[#b71c1c]">
+            Elige tu corte
+          </legend>
+
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {product.options.map((option) => {
+              const isSelected = selectedOptionId === option.id;
+
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => onSelectOption?.(option.id)}
+                  aria-pressed={isSelected}
+                  className={[
+                    "rounded-[18px] border px-4 py-3 text-left text-sm font-black uppercase tracking-[0.08em] transition",
+                    isSelected
+                      ? "border-stone-950 bg-stone-950 text-white"
+                      : "border-orange-200 bg-white text-stone-700 hover:border-stone-300",
+                  ].join(" ")}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {totalQuantity > 0 ? (
+            <p className="mt-3 text-sm font-semibold text-stone-600">
+              En tu pedido: {totalQuantity}
+            </p>
+          ) : null}
+        </fieldset>
+      ) : null}
 
       <div className="mt-5 flex items-center">
         <div className="flex h-13 items-center rounded-full border border-stone-200 bg-stone-50 px-2 shadow-inner">

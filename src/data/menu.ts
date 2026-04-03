@@ -13,13 +13,23 @@ export const featuredProducts: MenuProduct[] = [
     id: "platillo-individual",
     name: "Platillo Individual",
     description: [
-      "1 pieza de chuleta o costilla",
+      "1 pieza a elegir: aguja o costilla",
       "Salchicha",
       "Chiles y cebollitas asadas",
       "Tortillas",
     ],
     price: 110,
     category: "featured",
+    options: [
+      {
+        id: "aguja",
+        label: "Aguja",
+      },
+      {
+        id: "costilla",
+        label: "Costilla",
+      },
+    ],
     badge: "Más pedido",
     imageLabel: "Plato individual al carbón",
   },

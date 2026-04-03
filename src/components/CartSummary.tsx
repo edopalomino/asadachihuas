@@ -56,6 +56,11 @@ export function CartSummary({
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-lg font-black leading-tight">{item.name}</p>
+                {item.optionLabel ? (
+                  <p className="mt-1 text-sm font-semibold text-orange-200">
+                    {item.optionLabel}
+                  </p>
+                ) : null}
                 <p className="mt-1 text-sm font-medium text-stone-300">
                   {formatCurrency(item.unitPrice)} c/u
                 </p>
