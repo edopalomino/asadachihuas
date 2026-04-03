@@ -2,6 +2,15 @@ import type { Metadata } from "next";
 import { Bebas_Neue, Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ??
+  process.env.VERCEL_PROJECT_PRODUCTION_URL ??
+  "http://localhost:3000";
+
+const metadataBase = new URL(
+  siteUrl.startsWith("http") ? siteUrl : `https://${siteUrl}`,
+);
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -19,9 +28,30 @@ const bebasNeue = Bebas_Neue({
 });
 
 export const metadata: Metadata = {
+  metadataBase,
   title: "Asada Chihuas | Pedido rápido por WhatsApp",
   description:
     "Menú digital mobile-first para pedir carne asada, paquetes y extras por WhatsApp en segundos.",
+  openGraph: {
+    title: "Asada Chihuas | Pedido rápido por WhatsApp",
+    description:
+      "Menú digital mobile-first para pedir carne asada, paquetes y extras por WhatsApp en segundos.",
+    images: [
+      {
+        url: "/cover.png",
+        alt: "Portada de Asada Chihuas",
+      },
+    ],
+    locale: "es_MX",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Asada Chihuas | Pedido rápido por WhatsApp",
+    description:
+      "Menú digital mobile-first para pedir carne asada, paquetes y extras por WhatsApp en segundos.",
+    images: ["/cover.png"],
+  },
 };
 
 export default function RootLayout({
