@@ -10,6 +10,11 @@ import {
   sanitizeMenuContentDocument,
 } from "@/lib/menu-content";
 import {
+  MENU_PRODUCT_COLLECTION,
+  mergeMenuProducts,
+  sanitizeMenuProductDocument,
+} from "@/lib/menu-products";
+import {
   applyMenuPriceOverrides,
   MENU_PRICE_COLLECTION,
   sanitizePriceValue,
@@ -31,12 +36,14 @@ export default function LiveMenuExperience({
   serviceHighlights,
 }: LiveMenuExperienceProps) {
   const [priceOverrides, setPriceOverrides] = useState<MenuPriceMap>({});
+  const [remoteProducts, setRemoteProducts] = useState<MenuProduct[]>([]);
   const [priceSyncError, setPriceSyncError] = useState<string | null>(null);
   const [liveBusinessConfig, setLiveBusinessConfig] =
     useState<BusinessConfig>(businessConfig);
   const [liveServiceHighlights, setLiveServiceHighlights] =
     useState<string[]>(serviceHighlights);
   const [contentSyncError, setContentSyncError] = useState<string | null>(null);
+  const [productSyncError, setProductSyncError] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
@@ -59,6 +66,28 @@ export default function LiveMenuExperience({
       },
       () => {
         setPriceSyncError("No se pudieron sincronizar los precios en vivo.");
+      },
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collection(db, MENU_PRODUCT_COLLECTION),
+      (snapshot) => {
+        const nextProducts = snapshot.docs
+          .map((documentSnapshot) =>
+            sanitizeMenuProductDocument(documentSnapshot.id, documentSnapshot.data()),
+          )
+          .filter((product): product is MenuProduct => product !== null);
+
+        setRemoteProducts(nextProducts);
+        setProductSyncError(null);
+      },
+      () => {
+        setRemoteProducts([]);
+        setProductSyncError("No se pudieron sincronizar los productos personalizados.");
       },
     );
 
@@ -96,22 +125,27 @@ export default function LiveMenuExperience({
     return () => unsubscribe();
   }, [businessConfig, serviceHighlights]);
 
-  const liveFeaturedProducts = useMemo(
-    () => applyMenuPriceOverrides(featuredProducts, priceOverrides),
-    [featuredProducts, priceOverrides],
-  );
-
-  const liveExtraProducts = useMemo(
-    () => applyMenuPriceOverrides(extraProducts, priceOverrides),
-    [extraProducts, priceOverrides],
+  const mergedMenuProducts = useMemo(
+    () => mergeMenuProducts([...featuredProducts, ...extraProducts], remoteProducts),
+    [extraProducts, featuredProducts, remoteProducts],
   );
 
   const liveMenuProducts = useMemo(
-    () => [...liveFeaturedProducts, ...liveExtraProducts],
-    [liveExtraProducts, liveFeaturedProducts],
+    () => applyMenuPriceOverrides(mergedMenuProducts, priceOverrides),
+    [mergedMenuProducts, priceOverrides],
   );
 
-  const syncMessages = [priceSyncError, contentSyncError].filter(
+  const liveFeaturedProducts = useMemo(
+    () => liveMenuProducts.filter((product) => product.category === "featured"),
+    [liveMenuProducts],
+  );
+
+  const liveExtraProducts = useMemo(
+    () => liveMenuProducts.filter((product) => product.category === "extra"),
+    [liveMenuProducts],
+  );
+
+  const syncMessages = [priceSyncError, contentSyncError, productSyncError].filter(
     (message): message is string => Boolean(message),
   );
 

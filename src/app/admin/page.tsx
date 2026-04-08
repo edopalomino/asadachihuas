@@ -31,15 +31,42 @@ import {
   sanitizeMenuContentDocument,
 } from "@/lib/menu-content";
 import {
+  MENU_PRODUCT_COLLECTION,
+  mergeMenuProducts,
+  parseProductDescriptionInput,
+  parseProductOptionsInput,
+  sanitizeMenuProductDocument,
+} from "@/lib/menu-products";
+import {
   buildPriceDrafts,
   MENU_PRICE_COLLECTION,
   parsePriceInput,
   sanitizePriceValue,
 } from "@/lib/menu-pricing";
 import { formatCurrency } from "@/lib/whatsapp";
-import type { MenuPriceMap } from "@/types/menu";
+import type { MenuPriceMap, MenuProduct, ProductCategory } from "@/types/menu";
 
 const auth = getAuth(app);
+
+type NewProductDraft = {
+  name: string;
+  description: string;
+  price: string;
+  category: ProductCategory;
+  badge: string;
+  imageLabel: string;
+  options: string;
+};
+
+const EMPTY_NEW_PRODUCT_DRAFT: NewProductDraft = {
+  name: "",
+  description: "",
+  price: "",
+  category: "featured",
+  badge: "",
+  imageLabel: "",
+  options: "",
+};
 
 export default function AdminPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -53,6 +80,12 @@ export default function AdminPage() {
   const [hasBusinessOverride, setHasBusinessOverride] = useState(false);
   const [contentLoading, setContentLoading] = useState(false);
   const [businessBusy, setBusinessBusy] = useState(false);
+  const [remoteProducts, setRemoteProducts] = useState<MenuProduct[]>([]);
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [productBusy, setProductBusy] = useState(false);
+  const [newProductDraft, setNewProductDraft] = useState<NewProductDraft>(
+    EMPTY_NEW_PRODUCT_DRAFT,
+  );
   const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>(() =>
     buildPriceDrafts(menuProducts, {}),
   );
@@ -79,7 +112,6 @@ export default function AdminPage() {
     if (!user) {
       setRemotePrices({});
       setOverrideIds([]);
-      setPriceDrafts(buildPriceDrafts(menuProducts, {}));
       setPricesLoading(false);
       return;
     }
@@ -105,12 +137,45 @@ export default function AdminPage() {
 
         setRemotePrices(nextRemotePrices);
         setOverrideIds(nextOverrideIds);
-        setPriceDrafts(buildPriceDrafts(menuProducts, nextRemotePrices));
         setPricesLoading(false);
       },
       (snapshotError) => {
         setPricesLoading(false);
         setError(snapshotError.message || "No se pudieron cargar los precios de Firestore");
+      },
+    );
+
+    return () => unsubscribe();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      setRemoteProducts([]);
+      setProductsLoading(false);
+      return;
+    }
+
+    setProductsLoading(true);
+
+    const unsubscribe = onSnapshot(
+      collection(db, MENU_PRODUCT_COLLECTION),
+      (snapshot) => {
+        const nextProducts = snapshot.docs
+          .map((documentSnapshot) =>
+            sanitizeMenuProductDocument(documentSnapshot.id, documentSnapshot.data()),
+          )
+          .filter((product): product is MenuProduct => product !== null)
+          .sort((left, right) => left.name.localeCompare(right.name, "es"));
+
+        setRemoteProducts(nextProducts);
+        setProductsLoading(false);
+      },
+      (snapshotError) => {
+        setProductsLoading(false);
+        setError(
+          snapshotError.message ||
+            "No se pudieron cargar los productos personalizados de Firestore",
+        );
       },
     );
 
@@ -162,14 +227,23 @@ export default function AdminPage() {
     return () => unsubscribe();
   }, [user]);
 
+  const catalogProducts = useMemo(
+    () => mergeMenuProducts(menuProducts, remoteProducts),
+    [remoteProducts],
+  );
+
+  useEffect(() => {
+    setPriceDrafts(buildPriceDrafts(catalogProducts, remotePrices));
+  }, [catalogProducts, remotePrices]);
+
   const productRows = useMemo(
     () =>
-      menuProducts.map((product) => ({
+      catalogProducts.map((product) => ({
         ...product,
         livePrice: remotePrices[product.id] ?? product.price,
         hasOverride: overrideIds.includes(product.id),
       })),
-    [overrideIds, remotePrices],
+    [catalogProducts, overrideIds, remotePrices],
   );
 
   async function onLogin(e: React.FormEvent<HTMLFormElement>) {
@@ -337,12 +411,81 @@ export default function AdminPage() {
     }
   }
 
+  async function saveNewProduct() {
+    if (!user) {
+      setError("Inicia sesión para agregar productos.");
+      return;
+    }
+
+    const name = newProductDraft.name.trim();
+    const description = parseProductDescriptionInput(newProductDraft.description);
+    const price = parsePriceInput(newProductDraft.price);
+    const badge = newProductDraft.badge.trim();
+    const imageLabel = newProductDraft.imageLabel.trim();
+    const options = parseProductOptionsInput(newProductDraft.options);
+
+    if (!name) {
+      setError("Captura el nombre del producto.");
+      setSuccess(null);
+      return;
+    }
+
+    if (description.length === 0) {
+      setError("Agrega al menos una línea de descripción para el producto.");
+      setSuccess(null);
+      return;
+    }
+
+    if (price === null) {
+      setError("Captura un precio válido para el nuevo producto.");
+      setSuccess(null);
+      return;
+    }
+
+    if (newProductDraft.category === "extra" && options.length > 0) {
+      setError("Las opciones solo están disponibles para productos featured.");
+      setSuccess(null);
+      return;
+    }
+
+    setProductBusy(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const newProductRef = doc(collection(db, MENU_PRODUCT_COLLECTION));
+
+      await setDoc(newProductRef, {
+        id: newProductRef.id,
+        name,
+        description,
+        price,
+        category: newProductDraft.category,
+        ...(badge ? { badge } : {}),
+        ...(imageLabel ? { imageLabel } : {}),
+        ...(options.length > 0 ? { options } : {}),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        updatedBy: user.uid,
+      });
+
+      setNewProductDraft(EMPTY_NEW_PRODUCT_DRAFT);
+      setSuccess(`Producto agregado en ${newProductDraft.category}.`);
+    } catch (err) {
+      const message =
+        (err as Error).message || "No se pudo guardar el nuevo producto";
+      setError(message);
+    } finally {
+      setProductBusy(false);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-slate-100 p-4">
       <div className="mx-auto w-full max-w-4xl rounded-3xl bg-white p-6 shadow-md sm:p-8">
         <h1 className="mb-2 text-2xl font-bold text-slate-800">Admin Login</h1>
         <p className="mb-4 text-sm text-slate-600">
-          Edita precios y datos del negocio en Firestore sin tocar el menú base.
+          Edita datos del negocio, precios y agrega productos nuevos en featured o extra desde Firestore.
         </p>
 
         {error && <div className="mb-3 rounded border border-red-300 bg-red-50 p-2 text-sm text-red-700">{error}</div>}
@@ -490,6 +633,198 @@ export default function AdminPage() {
               </div>
             </section>
 
+            <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-semibold text-slate-900">Productos personalizados</p>
+                  <p className="text-slate-600">
+                    Los nuevos productos se guardan en Firestore dentro de {MENU_PRODUCT_COLLECTION} y se muestran automáticamente en la home.
+                  </p>
+                </div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  {productsLoading
+                    ? "Sincronizando"
+                    : `${remoteProducts.length} personalizados`}
+                </p>
+              </div>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    Categoría
+                  </span>
+                  <select
+                    value={newProductDraft.category}
+                    onChange={(event) =>
+                      setNewProductDraft((current) => ({
+                        ...current,
+                        category: event.target.value as ProductCategory,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-900 outline-none ring-2 ring-transparent transition focus:border-slate-400 focus:ring-slate-200"
+                  >
+                    <option value="featured">featured</option>
+                    <option value="extra">extra</option>
+                  </select>
+                </label>
+
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    Precio
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={newProductDraft.price}
+                    onChange={(event) =>
+                      setNewProductDraft((current) => ({
+                        ...current,
+                        price: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-900 outline-none ring-2 ring-transparent transition focus:border-slate-400 focus:ring-slate-200"
+                  />
+                </label>
+
+                <label className="block md:col-span-2">
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    Nombre
+                  </span>
+                  <input
+                    type="text"
+                    value={newProductDraft.name}
+                    onChange={(event) =>
+                      setNewProductDraft((current) => ({
+                        ...current,
+                        name: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-900 outline-none ring-2 ring-transparent transition focus:border-slate-400 focus:ring-slate-200"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    Badge opcional
+                  </span>
+                  <input
+                    type="text"
+                    value={newProductDraft.badge}
+                    onChange={(event) =>
+                      setNewProductDraft((current) => ({
+                        ...current,
+                        badge: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-900 outline-none ring-2 ring-transparent transition focus:border-slate-400 focus:ring-slate-200"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    Image label opcional
+                  </span>
+                  <input
+                    type="text"
+                    value={newProductDraft.imageLabel}
+                    onChange={(event) =>
+                      setNewProductDraft((current) => ({
+                        ...current,
+                        imageLabel: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-900 outline-none ring-2 ring-transparent transition focus:border-slate-400 focus:ring-slate-200"
+                  />
+                </label>
+
+                <label className="block md:col-span-2">
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    Descripción
+                  </span>
+                  <textarea
+                    rows={4}
+                    value={newProductDraft.description}
+                    onChange={(event) =>
+                      setNewProductDraft((current) => ({
+                        ...current,
+                        description: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-900 outline-none ring-2 ring-transparent transition focus:border-slate-400 focus:ring-slate-200"
+                  />
+                  <span className="mt-1 block text-xs text-slate-500">
+                    Escribe una línea por ingrediente o detalle del producto.
+                  </span>
+                </label>
+
+                <label className="block md:col-span-2">
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    Opciones para featured
+                  </span>
+                  <textarea
+                    rows={3}
+                    value={newProductDraft.options}
+                    onChange={(event) =>
+                      setNewProductDraft((current) => ({
+                        ...current,
+                        options: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-900 outline-none ring-2 ring-transparent transition focus:border-slate-400 focus:ring-slate-200"
+                  />
+                  <span className="mt-1 block text-xs text-slate-500">
+                    Opcional. Usa una línea por opción, por ejemplo Aguja o Costilla.
+                  </span>
+                </label>
+              </div>
+
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <button
+                  type="button"
+                  disabled={productBusy}
+                  onClick={saveNewProduct}
+                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                >
+                  {productBusy ? "Guardando..." : "Agregar producto"}
+                </button>
+
+                <p className="text-xs text-slate-500">
+                  Los productos nuevos también aparecerán en la sección de precios en vivo.
+                </p>
+              </div>
+
+              {remoteProducts.length > 0 ? (
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  {remoteProducts.map((product) => (
+                    <article
+                      key={product.id}
+                      className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h2 className="text-base font-semibold text-slate-900">
+                              {product.name}
+                            </h2>
+                            <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
+                              {product.category}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-sm text-slate-600">
+                            {product.description.join(" · ")}
+                          </p>
+                        </div>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {formatCurrency(product.price)}
+                        </p>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+
             <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-slate-700">
                 Usuario activo: <strong>{user.email}</strong>
@@ -512,7 +847,9 @@ export default function AdminPage() {
                   </p>
                 </div>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  {pricesLoading ? "Sincronizando" : `${productRows.length} productos`}
+                  {pricesLoading || productsLoading
+                    ? "Sincronizando"
+                    : `${productRows.length} productos`}
                 </p>
               </div>
 
